@@ -36,7 +36,6 @@ const SUPABASE_URL = 'https://xittyclukuqupzgpyaae.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhpdHR5Y2x1a3VxdXB6Z3B5YWFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MjA1NzYsImV4cCI6MjA4ODQ5NjU3Nn0.iAtrq8uXPbZz1wOpkVt8PzOodq3eNu34-8_FRw_B9P4';
 // ================================================================
 
-// Supabase REST client (tanpa library tambahan)
 const sb = {
   from: (table) => ({
     _table: table,
@@ -44,7 +43,6 @@ const sb = {
     _order: null,
     _limit: null,
     _select: '*',
-
     select(cols) { this._select = cols || '*'; return this; },
     eq(col, val) { this._filters.push(`${col}=eq.${encodeURIComponent(val)}`); return this; },
     neq(col, val) { this._filters.push(`${col}=neq.${encodeURIComponent(val)}`); return this; },
@@ -53,7 +51,6 @@ const sb = {
     ilike(col, val) { this._filters.push(`${col}=ilike.${encodeURIComponent(val)}`); return this; },
     order(col, opts) { this._order = `${col}.${opts && opts.ascending===false?'desc':'asc'}`; return this; },
     limit(n) { this._limit = n; return this; },
-
     _buildUrl(method) {
       let url = `${SUPABASE_URL}/rest/v1/${this._table}`;
       const params = [];
@@ -64,7 +61,6 @@ const sb = {
       if (params.length) url += '?' + params.join('&');
       return url;
     },
-
     _headers(extra) {
       return Object.assign({
         'apikey': SUPABASE_ANON_KEY,
@@ -73,20 +69,18 @@ const sb = {
         'Prefer': 'return=representation'
       }, extra || {});
     },
-
     async _req(method, body) {
       try {
         const res = await fetch(this._buildUrl(method), {
           method,
-          headers: this._headers(method === 'GET' ? {} : {}),
+          headers: this._headers(),
           body: body ? JSON.stringify(body) : undefined
         });
-        const data = res.ok ? await res.json() : null;
         if (!res.ok) { const err = await res.text(); return { data: null, error: err }; }
+        const data = await res.json();
         return { data, error: null };
       } catch(e) { return { data: null, error: e.message }; }
     },
-
     async get() { return this._req('GET'); },
     async insert(row) {
       return fetch(`${SUPABASE_URL}/rest/v1/${this._table}`, {
@@ -97,7 +91,6 @@ const sb = {
         .catch(e => ({data:null,error:e.message}));
     },
     async update(row) {
-      const url = this._buildUrl('PATCH').replace('?select=*','').replace(/select=[^&]+&?/,'');
       let qs = this._filters.join('&');
       const fullUrl = `${SUPABASE_URL}/rest/v1/${this._table}${qs?'?'+qs:''}`;
       return fetch(fullUrl, {
@@ -132,7 +125,7 @@ const sb = {
 // ================================================================
 const fmtTime = d => d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
 const fmtDate = d => d.toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-const fmtShort = s => { try { return new Date(s).toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'}); } catch { return s; }};
+const fmtShort = s => { try { return new Date(s).toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'}); } catch(e) { return s; }};
 const todayStr = () => new Date().toISOString().split('T')[0];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2);
 const isLate = (ci, ss) => { const[h1,m1]=ci.split(':').map(Number); const[h2,m2]=ss.split(':').map(Number); return h1>h2||(h1===h2&&m1>m2); };
@@ -145,7 +138,7 @@ const getGeo = () => new Promise(res => {
   if(!navigator.geolocation){res(null);return;}
   navigator.geolocation.getCurrentPosition(async pos => {
     const loc = {lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:Math.round(pos.coords.accuracy)};
-    try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${loc.lat}&lon=${loc.lng}&zoom=18`,{headers:{'Accept-Language':'id'}});const d=await r.json();if(d.display_name)loc.address=d.display_name.split(',').slice(0,3).join(',').trim();}catch{}
+    try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${loc.lat}&lon=${loc.lng}&zoom=18`,{headers:{'Accept-Language':'id'}});const d=await r.json();if(d.display_name)loc.address=d.display_name.split(',').slice(0,3).join(',').trim();}catch(e){}
     res(loc);
   }, ()=>res(null), {enableHighAccuracy:true,timeout:10000,maximumAge:0});
 });
@@ -163,9 +156,10 @@ function genDevice() {
   return {id, name:`${browser} on ${os}`, browser, os, screen:`${screen.width}x${screen.height}`, registeredAt:new Date().toISOString()};
 }
 
-// Supabase DB operations
+// ================================================================
+// DB OPERATIONS
+// ================================================================
 const DB = {
-  // Settings
   async getSettings() {
     const {data} = await sb.from('school_settings').eq('id','1').get();
     if(!data||!data[0]) return {schoolName:'SMA Negeri 1 Jakarta',schoolStart:'07:00',schoolEnd:'15:00',deviceLock:true,locationName:'SMA Negeri 1',locationLat:-6.2088,locationLng:106.8456,locationRadius:200};
@@ -175,8 +169,6 @@ const DB = {
   async saveSettings(s) {
     await sb.from('school_settings').eq('id','1').update({school_name:s.schoolName,school_start:s.schoolStart,school_end:s.schoolEnd,device_lock:s.deviceLock,location_name:s.locationName,location_lat:s.locationLat,location_lng:s.locationLng,location_radius:s.locationRadius,updated_at:new Date().toISOString()});
   },
-
-  // Students
   async getStudents() {
     const {data} = await sb.from('students').order('created_at',{ascending:true}).get();
     return (data||[]).map(r=>({id:r.id,name:r.name,studentCode:r.student_code,password:r.password,kelas:r.kelas,nis:r.nis,phone:r.phone,active:r.active,deviceId:r.device_id,deviceInfo:r.device_info,createdAt:r.created_at}));
@@ -192,24 +184,19 @@ const DB = {
   async resetStudentDevice(id) {
     return sb.from('students').eq('id',id).update({device_id:null,device_info:null});
   },
-
-  // Records
   async getRecords() {
     const {data} = await sb.from('attendance_records').order('date',{ascending:false}).order('created_at',{ascending:false}).get();
     return (data||[]).map(r=>({id:r.id,studentId:r.student_id,studentName:r.student_name,studentCode:r.student_code,date:r.date,clockIn:r.clock_in?r.clock_in.slice(0,5):null,clockOut:r.clock_out?r.clock_out.slice(0,5):null,clockInPhoto:r.clock_in_photo,clockOutPhoto:r.clock_out_photo,clockInLocation:r.clock_in_location,clockOutLocation:r.clock_out_location,clockInDistance:r.clock_in_distance,clockOutDistance:r.clock_out_distance,deviceId:r.device_id}));
   },
   async upsertRecord(rec) {
-    const row = {id:rec.id,student_id:rec.studentId,student_name:rec.studentName,student_code:rec.studentCode,date:rec.date,clock_in:rec.clockIn||null,clock_out:rec.clockOut||null,clock_in_photo:rec.clockInPhoto||null,clock_out_photo:rec.clockOutPhoto||null,clock_in_location:rec.clockInLocation||null,clock_out_location:rec.clockOutLocation||null,clock_in_distance:rec.clockInDistance??null,clock_out_distance:rec.clockOutDistance??null,device_id:rec.deviceId||null};
+    const row = {id:rec.id,student_id:rec.studentId,student_name:rec.studentName,student_code:rec.studentCode,date:rec.date,clock_in:rec.clockIn||null,clock_out:rec.clockOut||null,clock_in_photo:rec.clockInPhoto||null,clock_out_photo:rec.clockOutPhoto||null,clock_in_location:rec.clockInLocation||null,clock_out_location:rec.clockOutLocation||null,clock_in_distance:rec.clockInDistance!=null?rec.clockInDistance:null,clock_out_distance:rec.clockOutDistance!=null?rec.clockOutDistance:null,device_id:rec.deviceId||null};
     return sb.from('attendance_records').upsert(row);
   },
   async clearRecords() {
-    // delete all — no filter needed, use a workaround
     return fetch(`${SUPABASE_URL}/rest/v1/attendance_records?id=neq.null_placeholder`, {
       method:'DELETE', headers:{'apikey':SUPABASE_ANON_KEY,'Authorization':'Bearer '+SUPABASE_ANON_KEY,'Prefer':'return=minimal'}
     });
   },
-
-  // Leaves
   async getLeaves() {
     const {data} = await sb.from('leaves').order('created_at',{ascending:false}).get();
     return (data||[]).map(r=>({id:r.id,studentId:r.student_id,studentName:r.student_name,studentCode:r.student_code,type:r.type,startDate:r.start_date,endDate:r.end_date,reason:r.reason,status:r.status,reviewNote:r.review_note,reviewedAt:r.reviewed_at,createdAt:r.created_at}));
@@ -221,8 +208,6 @@ const DB = {
   async updateLeaveStatus(id,status,note) {
     return sb.from('leaves').eq('id',id).update({status,review_note:note||null,reviewed_at:new Date().toISOString()});
   },
-
-  // Announcements
   async getAnnouncements() {
     const {data} = await sb.from('announcements').order('created_at',{ascending:false}).get();
     return (data||[]).map(r=>({id:r.id,title:r.title,content:r.content,priority:r.priority,createdAt:r.created_at}));
@@ -231,8 +216,6 @@ const DB = {
     return sb.from('announcements').insert({id:a.id,title:a.title,content:a.content,priority:a.priority});
   },
   async deleteAnnouncement(id) { return sb.from('announcements').eq('id',id).delete(); },
-
-  // Notifications
   async getNotifications(targetId) {
     const {data} = await sb.from('notifications').eq('target_id',targetId).order('created_at',{ascending:false}).limit(30).get();
     return (data||[]).map(r=>({id:r.id,targetId:r.target_id,message:r.message,type:r.type,read:r.read,createdAt:r.created_at}));
@@ -246,8 +229,6 @@ const DB = {
   async clearNotifications(targetId) {
     return sb.from('notifications').eq('target_id',targetId).delete();
   },
-
-  // Activity Log
   async addLog(actor,action,detail) {
     return sb.from('activity_log').insert({id:uid(),actor,action,detail:detail||''});
   },
@@ -277,25 +258,15 @@ const MONO = 'JetBrains Mono,monospace';
 const LBL = {color:'rgba(0,240,255,.5)',fontSize:'9px',fontFamily:MONO,letterSpacing:'0.3em',textTransform:'uppercase',marginBottom:'4px',display:'block'};
 
 // ================================================================
-// COMPONENTS — Loading / Error
+// COMPONENTS
 // ================================================================
 function LoadingScreen({msg}) {
   return h('div',{style:{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'#0a0a0f',gap:'16px'}},
     h('div',{style:{width:'48px',height:'48px',border:'3px solid rgba(0,240,255,.2)',borderTop:'3px solid #00f0ff',borderRadius:'50%',animation:'spin-slow .7s linear infinite'}}),
-    h('p',{style:{fontFamily:MONO,color:'rgba(0,240,255,.5)',fontSize:'12px',letterSpacing:'0.2em'}}),
     h('p',{style:{fontFamily:MONO,color:'rgba(0,240,255,.5)',fontSize:'12px',letterSpacing:'0.2em'}},msg||'Memuat data...')
   );
 }
-function ErrorBanner({msg}) {
-  if(!msg) return null;
-  return h('div',{style:{padding:'10px 16px',background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',borderRadius:'12px',marginBottom:'12px'}},
-    h('p',{style:{color:'#f87171',fontSize:'12px',fontFamily:MONO}},'\u26A0 '+msg)
-  );
-}
 
-// ================================================================
-// PARTICLE BG
-// ================================================================
 function ParticleBg() {
   const ps = Array.from({length:20},(_,i)=>({id:i,x:Math.random()*100,y:Math.random()*100,sz:Math.random()*3+1,dur:Math.random()*20+10,delay:Math.random()*5,op:Math.random()*.4+.1}));
   return h('div',{style:{position:'fixed',inset:0,overflow:'hidden',pointerEvents:'none',zIndex:0}},
@@ -306,9 +277,6 @@ function ParticleBg() {
   );
 }
 
-// ================================================================
-// CLOCK
-// ================================================================
 function Clock({size}) {
   const[now,setNow]=useState(new Date());
   useEffect(()=>{const t=setInterval(()=>setNow(new Date()),1000);return()=>clearInterval(t);},[]);
@@ -319,16 +287,13 @@ function Clock({size}) {
       parts.map((v,i)=>h(Fragment,{key:i},
         h('div',{style:Object.assign({},gl,{borderRadius:'12px',padding:'12px 16px',border:'1px solid rgba(0,240,255,.2)'})},
           h('span',{style:{fontFamily:ORB,fontSize:'2.5rem',fontWeight:'bold',color:'#00f0ff',textShadow:'0 0 10px rgba(0,240,255,.5)'}},v)),
-        i<2&&h('span',{style:{fontFamily:ORB,fontSize:'1.875rem',color:'rgba(0,240,255,.5)',animation:'pulse-glow 2s ease-in-out infinite'}},':')
+        i<2&&h('span',{key:'sep'+i,style:{fontFamily:ORB,fontSize:'1.875rem',color:'rgba(0,240,255,.5)',animation:'pulse-glow 2s ease-in-out infinite'}},':')
       ))
     ),
     h('p',{style:{color:'rgba(255,255,255,.4)',marginTop:'16px',fontSize:'14px'}},fmtDate(now))
   );
 }
 
-// ================================================================
-// NOTIF BELL
-// ================================================================
 function NotifBell({targetId}) {
   const[open,setOpen]=useState(false);
   const[notifs,setNotifs]=useState([]);
@@ -369,9 +334,6 @@ function NotifBell({targetId}) {
   );
 }
 
-// ================================================================
-// CAMERA VIEW
-// ================================================================
 function CameraView({action,school,student,onCapture,onClose}) {
   const videoRef=useRef(null); const canvasRef=useRef(null); const streamRef=useRef(null);
   const[ready,setReady]=useState(false); const[flash,setFlash]=useState(false);
@@ -386,7 +348,7 @@ function CameraView({action,school,student,onCapture,onClose}) {
       if(streamRef.current)streamRef.current.getTracks().forEach(t=>t.stop());
       const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:f,width:{ideal:1280},height:{ideal:720}},audio:false});
       if(videoRef.current){videoRef.current.srcObject=s;setReady(true);}streamRef.current=s;
-    } catch { alert('Kamera tidak tersedia'); onClose(); }
+    } catch(e) { alert('Kamera tidak tersedia'); onClose(); }
   },[onClose]);
   useEffect(()=>{startCam(facing);return()=>{if(streamRef.current)streamRef.current.getTracks().forEach(t=>t.stop());};},[facing,startCam]);
   useEffect(()=>{
@@ -415,7 +377,7 @@ function CameraView({action,school,student,onCapture,onClose}) {
   const canCapture=ready&&countdown===null&&gpsStatus==='success'&&inside;
   return h('div',{style:{position:'fixed',inset:0,zIndex:50,background:'#000',display:'flex',flexDirection:'column'}},
     h('div',{style:Object.assign({},glS,{position:'absolute',top:0,left:0,right:0,zIndex:20,padding:'12px 16px',display:'flex',alignItems:'center',justifyContent:'space-between'})},
-      h('button',{onClick:()=>{if(streamRef.current)streamRef.current.getTracks().forEach(t=>t.stop());onClose();},style:Object.assign({},gl,{width:'40px',height:'40px',borderRadius:'50%',border:'1px solid rgba(255,255,255,.1)',display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(255,255,255,.7)',cursor:'pointer',fontSize:'16px'}),},'\u2715'),
+      h('button',{onClick:()=>{if(streamRef.current)streamRef.current.getTracks().forEach(t=>t.stop());onClose();},style:Object.assign({},gl,{width:'40px',height:'40px',borderRadius:'50%',border:'1px solid rgba(255,255,255,.1)',display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(255,255,255,.7)',cursor:'pointer',fontSize:'16px'})},'\u2715'),
       h('div',{style:{textAlign:'center'}},
         h('span',{style:{fontFamily:ORB,fontSize:'14px',fontWeight:'bold',letterSpacing:'0.2em',color:isIn?'#00f0ff':'#ff8800'}},isIn?'ABSEN MASUK':'ABSEN PULANG'),
         h('p',{style:{color:'rgba(255,255,255,.3)',fontSize:'9px',fontFamily:MONO}},student.name+' - '+student.kelas)
@@ -469,9 +431,6 @@ function CameraView({action,school,student,onCapture,onClose}) {
   );
 }
 
-// ================================================================
-// SECTION HEADER / STAT CARD / NAVBAR
-// ================================================================
 function SectionHeader({title,count,color1,color2,right}) {
   return h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
@@ -482,6 +441,7 @@ function SectionHeader({title,count,color1,color2,right}) {
     right||null
   );
 }
+
 function StatCard({icon,label,value,color,border}) {
   return h('div',{style:Object.assign({},gl,{borderRadius:'16px',padding:'16px',border:'1px solid '+(border||'rgba(0,240,255,.15)')})},
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}},
@@ -491,6 +451,7 @@ function StatCard({icon,label,value,color,border}) {
     h('p',{style:{fontFamily:ORB,fontSize:'1.5rem',fontWeight:'bold',color:color||'#00f0ff'}},value)
   );
 }
+
 function NavBar({items,active,onSelect}) {
   return h('nav',{style:Object.assign({},glS,{position:'fixed',bottom:0,left:0,right:0,zIndex:30,borderTop:'1px solid rgba(0,240,255,.1)'})},
     h('div',{style:{maxWidth:'512px',margin:'0 auto',padding:'8px 4px',overflowX:'auto'}},
@@ -515,7 +476,8 @@ function LoginScreen({onLogin}) {
   const[username,setUsername]=useState('');const[password,setPassword]=useState('');
   const[stuCode,setStuCode]=useState('');const[stuPass,setStuPass]=useState('');
   const[error,setError]=useState('');const[loading,setLoading]=useState(false);
-  const[showPass,setShowPass]=useState(false);const[devInfo]=useState(()=>genDevice());
+  const[showPass,setShowPass]=useState(false);
+  const[devInfo]=useState(()=>genDevice());
   const[settings,setSettings]=useState(null);
   useEffect(()=>{DB.getSettings().then(s=>{setSettings(s);});},[]);
   const loginAdmin=async()=>{
@@ -565,7 +527,7 @@ function LoginScreen({onLogin}) {
                   h('button',{onClick:()=>setShowPass(!showPass),style:{position:'absolute',right:'12px',top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}},showPass?'\uD83D\uDE48':'\uD83D\uDC41\uFE0F')
                 )
               ),
-              h('button',{onClick:loginAdmin,disabled:!username||!password||loading,style:{marginTop:'4px',padding:'14px',borderRadius:'12px',fontFamily:ORB,fontWeight:600,fontSize:'12px',letterSpacing:'0.2em',textTransform:'uppercase',background:'rgba(0,240,255,.1)',color:'#00f0ff',border:'1px solid rgba(0,240,255,.3)',cursor:'pointer',opacity:!username||!password?0.3:1,width:'100%'}},'\uD83D\uDEE1\uFE0F Masuk Admin')
+              h('button',{onClick:loginAdmin,disabled:!username||!password||loading,style:{marginTop:'4px',padding:'14px',borderRadius:'12px',fontFamily:ORB,fontWeight:600,fontSize:'12px',letterSpacing:'0.2em',textTransform:'uppercase',background:'rgba(0,240,255,.1)',color:'#00f0ff',border:'1px solid rgba(0,240,255,.3)',cursor:'pointer',opacity:(!username||!password)?0.3:1,width:'100%'}},'\uD83D\uDEE1\uFE0F Masuk Admin')
             )
             :h(Fragment,null,
               h('div',null,h('label',{style:LBL},'ID Siswa'),h('input',{className:'di',type:'text',value:stuCode,onChange:e=>setStuCode(e.target.value),onKeyDown:e=>e.key==='Enter'&&loginStudent(),placeholder:'SIS001',style:inSt})),
@@ -575,7 +537,7 @@ function LoginScreen({onLogin}) {
                   h('button',{onClick:()=>setShowPass(!showPass),style:{position:'absolute',right:'12px',top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',fontSize:'18px'}},showPass?'\uD83D\uDE48':'\uD83D\uDC41\uFE0F')
                 )
               ),
-              h('button',{onClick:loginStudent,disabled:!stuCode||!stuPass||loading,style:{marginTop:'4px',padding:'14px',borderRadius:'12px',fontFamily:ORB,fontWeight:600,fontSize:'12px',letterSpacing:'0.2em',textTransform:'uppercase',background:'rgba(0,240,255,.1)',color:'#00f0ff',border:'1px solid rgba(0,240,255,.3)',cursor:'pointer',opacity:!stuCode||!stuPass||loading?0.3:1,width:'100%'}},loading?'Memuat...:'\uD83C\uDF93 Masuk Siswa')
+              h('button',{onClick:loginStudent,disabled:!stuCode||!stuPass||loading,style:{marginTop:'4px',padding:'14px',borderRadius:'12px',fontFamily:ORB,fontWeight:600,fontSize:'12px',letterSpacing:'0.2em',textTransform:'uppercase',background:'rgba(0,240,255,.1)',color:'#00f0ff',border:'1px solid rgba(0,240,255,.3)',cursor:'pointer',opacity:(!stuCode||!stuPass||loading)?0.3:1,width:'100%'}},loading?'Memuat...':'\uD83C\uDF93 Masuk Siswa')
             ),
           error&&h('div',{style:{padding:'12px',borderRadius:'12px',background:'rgba(239,68,68,.1)',border:'1px solid rgba(239,68,68,.3)',textAlign:'center'}},h('p',{style:{color:'#f87171',fontSize:'12px',fontFamily:MONO,whiteSpace:'pre-line'}},error))
         )
@@ -602,7 +564,7 @@ function LoginScreen({onLogin}) {
 }
 
 // ================================================================
-// ADMIN PANEL
+// ADMIN DASHBOARD
 // ================================================================
 function AdminDashboard({students,records,settings,leaves}) {
   const todayRecs=records.filter(r=>r.date===todayStr());
@@ -952,7 +914,7 @@ function StudentHome({student,records,settings,school,announcements,leaves,onOpe
       h('p',{style:{fontFamily:ORB,fontSize:'10px',color:'rgba(255,136,0,.7)',letterSpacing:'0.3em',textTransform:'uppercase',marginBottom:'12px'}},'Pengumuman'),
       recentAnn.map(a=>h('div',{key:a.id,style:Object.assign({},gl,{borderRadius:'12px',padding:'12px',border:'1px solid rgba(255,255,255,.05)',marginBottom:'8px'})},
         h('p',{style:{color:'rgba(255,255,255,.7)',fontSize:'12px',fontWeight:'500',marginBottom:'4px'}},(a.priority==='urgent'?'\uD83D\uDD34 ':a.priority==='important'?'\uD83D\uDFE1 ':'\uD83D\uDD35 ')+a.title),
-        h('p',{style:{color:'rgba(255,255,255,.4)',fontSize:'10px',lineHeight:'1.5'}},a.content.slice(0,100)+(a.content.length>100?'...:'')),
+        h('p',{style:{color:'rgba(255,255,255,.4)',fontSize:'10px',lineHeight:'1.5'}},a.content.length>100?a.content.slice(0,100)+'...':a.content),
         h('p',{style:{color:'rgba(255,255,255,.2)',fontSize:'8px',fontFamily:MONO,marginTop:'4px'}},fmtAgo(a.createdAt))
       ))
     ),
@@ -1204,11 +1166,11 @@ function StudentPanel({student,onLogout}) {
     const existing=records.find(r=>r.date===date);
     let rec;
     if(camAction==='in'){
-      rec=existing?Object.assign({},existing,{clockIn:time,clockInPhoto:photo,clockInLocation:location||null,clockInDistance:distance??null,deviceId:student.deviceId}):{id:uid(),studentId:student.id,studentName:student.name,studentCode:student.studentCode,date,clockIn:time,clockInPhoto:photo,clockInLocation:location||null,clockInDistance:distance??null,deviceId:student.deviceId};
+      rec=existing?Object.assign({},existing,{clockIn:time,clockInPhoto:photo,clockInLocation:location||null,clockInDistance:distance!=null?distance:null,deviceId:student.deviceId}):{id:uid(),studentId:student.id,studentName:student.name,studentCode:student.studentCode,date,clockIn:time,clockInPhoto:photo,clockInLocation:location||null,clockInDistance:distance!=null?distance:null,deviceId:student.deviceId};
       await DB.addLog(student.name,'Absen Masuk',time);
     } else {
       if(!existing)return;
-      rec=Object.assign({},existing,{clockOut:time,clockOutPhoto:photo,clockOutLocation:location||null,clockOutDistance:distance??null});
+      rec=Object.assign({},existing,{clockOut:time,clockOutPhoto:photo,clockOutLocation:location||null,clockOutDistance:distance!=null?distance:null});
       await DB.addLog(student.name,'Absen Pulang',time);
     }
     await DB.upsertRecord(rec);
@@ -1250,7 +1212,6 @@ function App() {
   const[session,setSession]=useState(null);
   const[checking,setChecking]=useState(true);
   useEffect(()=>{
-    // Quick connectivity check
     DB.getSettings().then(()=>setChecking(false)).catch(()=>setChecking(false));
   },[]);
   if(checking)return h(LoadingScreen,{msg:'Menghubungkan ke Supabase...'});
